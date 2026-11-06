@@ -11,64 +11,81 @@
 <style>
   :root { --accent:#e8742c; --bg:#111; --fg:#f2f2f2; --muted:#999; --card:#1d1d1d; }
   * { box-sizing:border-box; }
-  body { margin:0; font-family:system-ui,-apple-system,"Hiragino Sans",sans-serif; background:var(--bg); color:var(--fg); }
-  main { max-width:520px; margin:0 auto; padding:16px; }
-  h1 { font-size:18px; margin:4px 0 12px; }
-  .viewer { position:relative; width:100%; aspect-ratio:3/4; background:#000; border-radius:12px; overflow:hidden; }
-  video { width:100%; height:100%; object-fit:cover; display:block; }
-  /* 読み取り枠（この範囲だけをOCRにかける） */
-  .guide { position:absolute; left:8%; right:8%; top:42%; height:16%; border:3px solid var(--accent); border-radius:8px;
-           box-shadow:0 0 0 9999px rgba(0,0,0,.45); }
-  .guide span { position:absolute; top:-26px; left:0; font-size:12px; color:#fff; }
-  .status { margin:10px 0; font-size:14px; color:var(--muted); min-height:1.4em; }
-  button { font:inherit; font-size:16px; padding:12px 16px; border:0; border-radius:10px; background:var(--accent); color:#fff; cursor:pointer; }
+  html, body { margin:0; background:var(--bg); color:var(--fg);
+               font-family:system-ui,-apple-system,"Hiragino Sans",sans-serif; }
+  main { max-width:520px; margin:0 auto; padding:10px 12px; }
+  h1 { font-size:15px; margin:0 0 8px; color:var(--muted); font-weight:600; }
+
+  /* カメラ（画面の上半分程度に収める） */
+  .viewer { position:relative; width:100%; height:38vh; min-height:200px; background:#000; border-radius:12px; overflow:hidden; }
+  video { width:100%; height:100%; object-fit:cover; display:block; transform-origin:center center; }
+  .guide { position:absolute; left:6%; right:6%; top:40%; height:20%; border:3px solid var(--accent); border-radius:8px;
+           box-shadow:0 0 0 9999px rgba(0,0,0,.4); pointer-events:none; }
+  .guide span { position:absolute; top:-22px; left:0; font-size:12px; color:#fff; white-space:nowrap; }
+  /* 実際にOCRへ渡している画像（確認用） */
+  #preview { position:absolute; left:6px; bottom:6px; max-width:60%; height:34px; border-radius:4px; background:#fff; opacity:.9; display:none; }
+
+  .controls { display:flex; gap:8px; align-items:center; margin:8px 0 4px; }
+  .controls button { flex:0 0 auto; }
+  .zoom { flex:1; display:flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); }
+  .zoom input { flex:1; }
+  .status { font-size:13px; color:var(--muted); min-height:1.3em; margin:2px 0 8px; }
+
+  button { font:inherit; font-size:15px; padding:10px 14px; border:0; border-radius:10px; background:var(--accent); color:#fff; cursor:pointer; }
   button.sub { background:#333; }
-  button:disabled { opacity:.5; }
-  .row { display:flex; gap:8px; margin:8px 0; }
-  .row > * { flex:1; }
-  input[type=text] { font:inherit; font-size:18px; letter-spacing:.08em; padding:12px; border-radius:10px; border:1px solid #444;
+  button:disabled { opacity:.45; }
+
+  /* 結果（QRと情報を横並びにして1画面に収める） */
+  .result { display:flex; gap:12px; background:var(--card); border-radius:12px; padding:10px; align-items:flex-start; }
+  #qr { flex:0 0 auto; width:136px; height:136px; background:#fff; border-radius:8px; padding:4px; display:flex; align-items:center; justify-content:center; }
+  #qr svg { width:128px; height:128px; display:block; }
+  #qr .ph { color:#999; font-size:12px; text-align:center; padding:8px; }
+  .info { flex:1; min-width:0; }
+  .code { font-size:21px; font-weight:700; letter-spacing:.08em; margin:0 0 6px; word-break:break-all; }
+  .info a { color:#7fc4ff; font-size:12px; word-break:break-all; display:block; margin-bottom:8px; }
+  .info button { font-size:13px; padding:8px 10px; }
+
+  .manual { margin-top:10px; }
+  input[type=text] { font:inherit; font-size:17px; letter-spacing:.06em; padding:10px; border-radius:10px; border:1px solid #444;
                      background:#000; color:var(--fg); text-transform:uppercase; width:100%; }
-  .card { background:var(--card); border-radius:12px; padding:16px; margin-top:16px; }
-  .result a { color:#7fc4ff; word-break:break-all; font-size:14px; }
-  .code { font-size:24px; font-weight:700; letter-spacing:.1em; margin:4px 0 10px; }
-  #qr { background:#fff; border-radius:8px; padding:8px; display:inline-block; margin-top:12px; }
-  #qr svg, #qr img { display:block; width:240px; height:240px; }
-  .hidden { display:none; }
-  small { color:var(--muted); }
+  small { color:var(--muted); font-size:12px; }
+  .flash { animation:flash .6s; }
+  @keyframes flash { from { background:#4a3a10; } to { background:var(--card); } }
 </style>
 </head>
 <body>
 <main>
   <h1>コード読み取り → 引き換えリンク / QR</h1>
 
-  <div class="viewer">
+  <div class="viewer" id="viewer">
     <video id="video" playsinline muted autoplay></video>
-    <div class="guide"><span>コードをこの枠に合わせてください</span></div>
+    <div class="guide" id="guide"><span>コードをこの枠に入れてください</span></div>
+    <img id="preview" alt="">
   </div>
 
-  <div class="status" id="status">「カメラ開始」を押してください</div>
-
-  <div class="row">
+  <div class="controls">
     <button id="startBtn">カメラ開始</button>
     <button id="stopBtn" class="sub" disabled>停止</button>
+    <label class="zoom" id="zoomBox" style="visibility:hidden">ズーム
+      <input type="range" id="zoom" min="1" max="4" step="0.1" value="1">
+      <span id="zoomVal">1.0x</span>
+    </label>
   </div>
+  <div class="status" id="status">「カメラ開始」を押してください</div>
 
-  <div class="card">
-    <small>手入力・修正もできます（入力すると自動でリンクとQRが更新されます）</small>
-    <div class="row">
-      <input type="text" id="codeInput" placeholder="例：4JEXF78SYW95R" autocomplete="off" autocapitalize="characters" spellcheck="false">
+  <div class="result" id="result">
+    <div id="qr"><div class="ph">ここにQRが表示されます</div></div>
+    <div class="info">
+      <small>コード</small>
+      <div class="code" id="codeText">—</div>
+      <a id="link" href="#" target="_blank" rel="noopener"></a>
+      <button class="sub" id="copyBtn" disabled>URLをコピー</button>
     </div>
   </div>
 
-  <div class="card result hidden" id="result">
-    <small>読み取ったコード</small>
-    <div class="code" id="codeText"></div>
-    <a id="link" href="#" target="_blank" rel="noopener"></a>
-    <div class="row" style="margin-top:12px">
-      <button class="sub" id="copyBtn">URLをコピー</button>
-      <button class="sub" id="againBtn">もう一度読み取る</button>
-    </div>
-    <div id="qr"></div>
+  <div class="manual">
+    <small>手入力・修正（入力するとすぐ反映されます）</small>
+    <input type="text" id="codeInput" placeholder="例：4JEXF78SYW95R" autocomplete="off" autocapitalize="characters" spellcheck="false">
   </div>
 </main>
 
@@ -79,17 +96,20 @@
   const CODE_LEN   = 13;                                   // コードの文字数
   const CODE_RE    = new RegExp(`[A-Z0-9]{${CODE_LEN}}`);  // コードの形式
   const WHITELIST  = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  const SCAN_INTERVAL_MS = 700;   // OCRの間隔
+  const SCAN_INTERVAL_MS = 250;   // OCRの間隔
   const CONFIRM_COUNT    = 2;     // 同じ結果が何回連続したら確定するか（誤読防止）
+  const TARGET_HEIGHT    = 260;   // OCRに渡す画像の高さ(px)。小さい文字を拡大するための基準
 
   // ===== 要素 =====
   const $ = id => document.getElementById(id);
-  const video = $('video'), statusEl = $('status');
+  const video = $('video'), statusEl = $('status'), guide = $('guide'), preview = $('preview');
   const startBtn = $('startBtn'), stopBtn = $('stopBtn');
-  const codeInput = $('codeInput');
-  const resultEl = $('result'), codeText = $('codeText'), linkEl = $('link'), qrEl = $('qr');
+  const zoomBox = $('zoomBox'), zoomEl = $('zoom'), zoomVal = $('zoomVal');
+  const codeInput = $('codeInput'), resultEl = $('result');
+  const codeText = $('codeText'), linkEl = $('link'), qrEl = $('qr'), copyBtn = $('copyBtn');
 
-  let stream = null, worker = null, scanning = false, lastCode = '', sameCount = 0;
+  let stream = null, track = null, worker = null, scanning = false;
+  let candidate = '', sameCount = 0, currentCode = '', hwZoom = false;
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
@@ -100,10 +120,7 @@
     if (worker) return worker;
     setStatus('文字認識エンジンを読み込み中…（初回は数秒かかります）');
     worker = await Tesseract.createWorker('eng');
-    await worker.setParameters({
-      tessedit_char_whitelist: WHITELIST,
-      tessedit_pageseg_mode: '7',   // 1行のテキストとして認識
-    });
+    await worker.setParameters({ tessedit_char_whitelist: WHITELIST });
     return worker;
   }
 
@@ -115,18 +132,20 @@
     }
     startBtn.disabled = true;
     try {
+      // できるだけ高解像度で取得（小さい文字の読み取り精度が上がる）
       stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+        video: { facingMode: { ideal: 'environment' }, width: { ideal: 3840 }, height: { ideal: 2160 } },
         audio: false,
       });
+      track = stream.getVideoTracks()[0];
       video.srcObject = stream;
       await video.play();
+      await setupCameraFeatures();
       await getWorker();
       stopBtn.disabled = false;
-      resultEl.classList.add('hidden');
-      lastCode = ''; sameCount = 0;
+      candidate = ''; sameCount = 0;
       scanning = true;
-      setStatus('読み取り中… 枠の中にコードを合わせてください');
+      setStatus('読み取り中…（小さい文字はズームで大きくしてください）');
       scanLoop();
     } catch (e) {
       console.error(e);
@@ -135,13 +154,55 @@
     }
   }
 
+  // オートフォーカス・ズームの設定
+  async function setupCameraFeatures() {
+    const caps = track.getCapabilities ? track.getCapabilities() : {};
+    try {
+      if (caps.focusMode && caps.focusMode.includes('continuous')) {
+        await track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
+      }
+    } catch (e) { /* 非対応端末は無視 */ }
+
+    if (caps.zoom && caps.zoom.max > caps.zoom.min) {
+      // カメラ本体のズーム（光学/センサー側）に対応している場合
+      hwZoom = true;
+      zoomEl.min = caps.zoom.min;
+      zoomEl.max = Math.min(caps.zoom.max, 10);
+      zoomEl.step = caps.zoom.step || 0.1;
+      zoomEl.value = track.getSettings().zoom || caps.zoom.min;
+    } else {
+      // 非対応の場合は画面上で拡大（デジタルズーム）
+      hwZoom = false;
+      zoomEl.min = 1; zoomEl.max = 4; zoomEl.step = 0.1;
+      zoomEl.value = 1;
+    }
+    applyZoom();
+    zoomBox.style.visibility = 'visible';
+  }
+
+  async function applyZoom() {
+    const z = parseFloat(zoomEl.value);
+    zoomVal.textContent = z.toFixed(1) + 'x';
+    if (hwZoom) {
+      video.style.transform = '';
+      try { await track.applyConstraints({ advanced: [{ zoom: z }] }); } catch (e) {}
+    } else {
+      video.style.transform = `scale(${z})`;
+    }
+  }
+
+  // 停止：読み取りを終了。URL/QRは最後の状態のまま残す
   function stopCamera() {
     scanning = false;
     if (stream) stream.getTracks().forEach(t => t.stop());
-    stream = null;
+    stream = null; track = null;
     video.srcObject = null;
+    video.style.transform = '';
+    zoomBox.style.visibility = 'hidden';
+    preview.style.display = 'none';
     startBtn.disabled = false;
     stopBtn.disabled = true;
+    setStatus(currentCode ? `停止しました（最後のコード：${currentCode}）` : '停止しました');
   }
 
   // ===== 枠の範囲を切り出して前処理 =====
@@ -149,74 +210,95 @@
     const vw = video.videoWidth, vh = video.videoHeight;
     if (!vw || !vh) return null;
 
-    // 画面表示(object-fit:cover)上の枠位置 → 実映像座標に変換
+    // 表示上の枠位置 → 実映像の座標に変換（object-fit:cover と画面上ズームを考慮）
     const rect = video.getBoundingClientRect();
     const scale = Math.max(rect.width / vw, rect.height / vh);
     const offX = (vw * scale - rect.width) / 2;
     const offY = (vh * scale - rect.height) / 2;
-    const g = document.querySelector('.guide').getBoundingClientRect();
-    const sx = (g.left - rect.left + offX) / scale;
-    const sy = (g.top  - rect.top  + offY) / scale;
-    const sw = g.width / scale, sh = g.height / scale;
+    const g = guide.getBoundingClientRect();
+    let sx = (g.left - rect.left + offX) / scale;
+    let sy = (g.top  - rect.top  + offY) / scale;
+    let sw = g.width / scale, sh = g.height / scale;
+    sx = Math.max(0, sx); sy = Math.max(0, sy);
+    sw = Math.min(vw - sx, sw); sh = Math.min(vh - sy, sh);
 
-    // 2倍に拡大して認識精度を上げる
-    const k = 2;
+    // 小さい文字も読めるよう、一定の高さまで拡大（最大4倍）
+    const k = Math.min(4, Math.max(1, TARGET_HEIGHT / sh));
     canvas.width = Math.round(sw * k);
     canvas.height = Math.round(sh * k);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
 
-    // グレースケール＋コントラスト強調
+    // グレースケール化
     const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const d = img.data;
-    let min = 255, max = 0;
-    for (let i = 0; i < d.length; i += 4) {
-      const y = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-      d[i] = y;
-      if (y < min) min = y;
-      if (y > max) max = y;
+    const d = img.data, n = d.length / 4;
+    const gray = new Uint8ClampedArray(n);
+    const hist = new Uint32Array(256);
+    for (let i = 0, p = 0; p < n; i += 4, p++) {
+      const y = (0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]) | 0;
+      gray[p] = y; hist[y]++;
     }
-    const range = Math.max(1, max - min);
-    let sum = 0;
-    for (let i = 0; i < d.length; i += 4) {
-      const v = ((d[i] - min) / range) * 255;
-      d[i] = v; sum += v;
+    // 大津の方法で白黒の閾値を決定
+    let sumAll = 0; for (let t = 0; t < 256; t++) sumAll += t * hist[t];
+    let sumB = 0, wB = 0, best = 0, th = 128;
+    for (let t = 0; t < 256; t++) {
+      wB += hist[t]; if (!wB) continue;
+      const wF = n - wB; if (!wF) break;
+      sumB += t * hist[t];
+      const mB = sumB / wB, mF = (sumAll - sumB) / wF;
+      const between = wB * wF * (mB - mF) * (mB - mF);
+      if (between > best) { best = between; th = t; }
     }
-    // 背景が暗い（白文字）場合は反転して黒文字にする
-    const invert = sum / (d.length / 4) < 128;
-    for (let i = 0; i < d.length; i += 4) {
-      const v = invert ? 255 - d[i] : d[i];
+    // 白黒化。背景（多数派）が黒なら反転して「白地に黒文字」にそろえる
+    let dark = 0; for (let p = 0; p < n; p++) if (gray[p] < th) dark++;
+    const invert = dark > n / 2;
+    for (let i = 0, p = 0; p < n; i += 4, p++) {
+      let v = gray[p] < th ? 0 : 255;
+      if (invert) v = 255 - v;
       d[i] = d[i + 1] = d[i + 2] = v;
     }
     ctx.putImageData(img, 0, 0);
     return canvas;
   }
 
+  // 行ごとに空白を詰めてコードを探す（「4JEX F78S YW95R」のような区切りにも対応）
   function extractCode(text) {
-    const cleaned = text.toUpperCase().replace(/[^A-Z0-9]/g, '');
-    const m = cleaned.match(CODE_RE);
-    return m ? m[0] : null;
+    for (const line of text.toUpperCase().split(/\n/)) {
+      const m = line.replace(/[^A-Z0-9]/g, '').match(CODE_RE);
+      if (m) return m[0];
+    }
+    return null;
+  }
+
+  async function recognize(c, psm) {
+    await worker.setParameters({ tessedit_pageseg_mode: psm });
+    const { data } = await worker.recognize(c);
+    return extractCode(data.text);
   }
 
   async function scanLoop() {
     while (scanning) {
       const c = captureGuideArea();
       if (c) {
+        preview.src = c.toDataURL('image/png');
+        preview.style.display = 'block';
         try {
-          const { data } = await worker.recognize(c);
-          const code = extractCode(data.text);
+          // まず「1行」として認識、ダメなら「散らばった文字」として再認識
+          let code = await recognize(c, '7');
+          if (!code && scanning) code = await recognize(c, '11');
+          if (!scanning) break;
           if (code) {
-            sameCount = (code === lastCode) ? sameCount + 1 : 1;
-            lastCode = code;
-            // 読み取れた時点ですぐにリンクとQRを表示
-            if (codeInput.value !== code) { codeInput.value = code; showResult(code, false); }
-            setStatus(`読み取り：${code}（確認中 ${sameCount}/${CONFIRM_COUNT}）`);
-            if (sameCount >= CONFIRM_COUNT) {
-              if (navigator.vibrate) navigator.vibrate(100);
-              stopCamera();
+            sameCount = (code === candidate) ? sameCount + 1 : 1;
+            candidate = code;
+            if (sameCount >= CONFIRM_COUNT && code !== currentCode) {
+              // 新しいコードを確定 → その場でURL/QRを更新（画面は動かさない）
+              if (navigator.vibrate) navigator.vibrate(80);
               codeInput.value = code;
               showResult(code, true);
-              setStatus('読み取り完了！ 誤りがあれば上の欄で修正して再生成できます');
-              return;
+              setStatus(`読み取りました：${code}（続けて別のコードも読めます）`);
+            } else if (code !== currentCode) {
+              setStatus(`確認中：${code}`);
             }
           }
         } catch (e) { console.error(e); }
@@ -225,36 +307,39 @@
     }
   }
 
-  // ===== リンクとQRの生成 =====
-  function showResult(code, scroll = true) {
+  // ===== リンクとQRの生成（スクロールしない） =====
+  function showResult(code, flash) {
+    currentCode = code;
     const url = BASE_URL + encodeURIComponent(code);
     codeText.textContent = code;
     linkEl.href = url;
     linkEl.textContent = url;
+    copyBtn.disabled = false;
 
     const qr = qrcode(0, 'M');
     qr.addData(url);
     qr.make();
-    qrEl.innerHTML = qr.createSvgTag({ cellSize: 6, margin: 4, scalable: true });
+    qrEl.innerHTML = qr.createSvgTag({ cellSize: 4, margin: 2, scalable: true });
 
-    resultEl.classList.remove('hidden');
-    if (scroll) resultEl.scrollIntoView({ behavior: 'smooth' });
+    if (flash) {
+      resultEl.classList.remove('flash'); void resultEl.offsetWidth; resultEl.classList.add('flash');
+    }
   }
 
   function generateFromInput() {
     const code = codeInput.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
     if (codeInput.value !== code) codeInput.value = code;
-    if (!code) { resultEl.classList.add('hidden'); return; }
-    setStatus(code.length === CODE_LEN ? '' : `※ ${CODE_LEN}文字ではありません（${code.length}文字）`);
+    if (!code) return;
+    if (code.length !== CODE_LEN) setStatus(`※ ${CODE_LEN}文字ではありません（${code.length}文字）`);
     showResult(code, false);
   }
 
   // ===== イベント =====
   startBtn.addEventListener('click', startCamera);
-  stopBtn.addEventListener('click', () => { stopCamera(); setStatus('停止しました'); });
+  stopBtn.addEventListener('click', stopCamera);
+  zoomEl.addEventListener('input', applyZoom);
   codeInput.addEventListener('input', generateFromInput);
-  $('againBtn').addEventListener('click', () => { window.scrollTo({ top: 0, behavior: 'smooth' }); startCamera(); });
-  $('copyBtn').addEventListener('click', async () => {
+  copyBtn.addEventListener('click', async () => {
     try { await navigator.clipboard.writeText(linkEl.href); setStatus('URLをコピーしました'); }
     catch { setStatus('コピーできませんでした。リンクを長押ししてコピーしてください'); }
   });
