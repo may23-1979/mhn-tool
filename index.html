@@ -164,7 +164,15 @@
   const codeText = $('codeText'), linkEl = $('link'), qrEl = $('qr'), copyBtn = $('copyBtn'), clearBtn = $('clearBtn');
 
   let stream = null, track = null, workers = null, workersPromise = null, scanning = false;
-  let candidate = '', sameCount = 0, currentCode = '', hwZoom = false;
+  let candidate = '', sameCount = 0, currentCode = '', currentUrl = '', hwZoom = false;
+
+  // Androidでは「引き換えページを開く」をChromeで開く（Chromeが無ければ通常のURLで開く）
+  const IS_ANDROID = /Android/i.test(navigator.userAgent);
+  function chromeIntentUrl(url) {
+    return 'intent://' + url.replace(/^https:\/\//, '') +
+      '#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=' +
+      encodeURIComponent(url) + ';end';
+  }
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
@@ -390,7 +398,8 @@
     currentCode = code;
     const url = BASE_URL + encodeURIComponent(code);
     codeText.textContent = code;
-    linkEl.href = url;
+    currentUrl = url;
+    linkEl.href = IS_ANDROID ? chromeIntentUrl(url) : url;
     linkEl.innerHTML = '引き換えページを開く ↗<span class="url"></span>';
     linkEl.querySelector('.url').textContent = url;
     linkEl.classList.remove('disabled');
@@ -419,6 +428,7 @@
     currentCode = ''; candidate = ''; sameCount = 0;
     codeInput.value = '';
     codeText.textContent = '—';
+    currentUrl = '';
     linkEl.href = '#';
     linkEl.innerHTML = '引き換えページを開く<span class="url">コードを読み取るとリンクが有効になります</span>';
     linkEl.classList.add('disabled');
@@ -434,7 +444,7 @@
   zoomEl.addEventListener('input', applyZoom);
   codeInput.addEventListener('input', generateFromInput);
   copyBtn.addEventListener('click', async () => {
-    try { await navigator.clipboard.writeText(linkEl.href); setStatus('URLをコピーしました'); }
+    try { await navigator.clipboard.writeText(currentUrl); setStatus('URLをコピーしました'); }
     catch { setStatus('コピーできませんでした。リンクを長押ししてコピーしてください'); }
   });
 })();
