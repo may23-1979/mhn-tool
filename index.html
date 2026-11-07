@@ -57,6 +57,11 @@
   input[type=text] { font:inherit; font-size:17px; letter-spacing:.06em; padding:10px; border-radius:10px; border:1px solid #444;
                      background:#000; color:var(--fg); text-transform:uppercase; width:100%; }
   small { color:var(--muted); font-size:12px; }
+  .about { margin:16px 0 8px; background:var(--card); border-radius:12px; padding:2px 12px; font-size:12.5px; color:#bbb; line-height:1.7; }
+  .about summary { cursor:pointer; padding:10px 0; color:var(--muted); font-size:13px; }
+  .about h2 { font-size:13px; color:var(--fg); margin:12px 0 4px; }
+  .about ul { margin:0 0 6px; padding-left:1.2em; }
+  .about p { margin:0 0 6px; }
   .flash { animation:flash .6s; }
   @keyframes flash { from { background:#4a3a10; } to { background:var(--card); } }
 </style>
@@ -100,6 +105,28 @@
     <small>手入力・修正（入力するとすぐ反映されます）</small>
     <input type="text" id="codeInput" placeholder="例：4JEXF78SYW95R" autocomplete="off" autocapitalize="characters" spellcheck="false">
   </div>
+
+  <details class="about">
+    <summary>このツールについて（非公式・免責事項・プライバシー）</summary>
+
+    <h2>非公式ツールです</h2>
+    <p>このツールは個人が作成した非公式のツールです。モンスターハンターNow、Niantic, Inc.、株式会社カプコンとは一切関係がありません。ゲームやストアに関するお問い合わせは、公式窓口へお願いします。</p>
+
+    <h2>免責事項</h2>
+    <ul>
+      <li>文字の読み取りは誤ることがあります。表示されたコードは、必ず元のコードと見比べてからご利用ください。</li>
+      <li>コードが使用できない・期限切れ・入力ミスなど、本ツールの利用により生じたいかなる結果・損害についても、作成者は責任を負いません。</li>
+      <li>本ツールは予告なく内容の変更・公開の停止を行うことがあります。</li>
+    </ul>
+
+    <h2>プライバシー（データの取り扱い）</h2>
+    <ul>
+      <li>カメラの映像と読み取ったコードは、お使いの端末のブラウザ内だけで処理しています。外部への送信や保存は一切行いません。</li>
+      <li>アクセス数の把握のため、Cloudflare Web Analytics を利用しています。Cookie は使用せず、閲覧ページ・端末の種類・国などの集計データのみを取得し、個人を特定する目的では利用しません。送信先：Cloudflare, Inc.</li>
+      <li>文字認識（Tesseract.js）とQRコード生成のプログラムを jsDelivr（外部の配信サービス）から読み込んでいます。その際、通常のWebアクセスと同様に、IPアドレスなどの通信情報が配信元に送られます。</li>
+    </ul>
+    <p style="color:var(--muted)">制定日：2026年11月7日</p>
+  </details>
 </main>
 
 <script>
