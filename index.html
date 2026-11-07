@@ -23,7 +23,7 @@
            box-shadow:0 0 0 9999px rgba(0,0,0,.4); pointer-events:none; }
   .guide span { position:absolute; top:-22px; left:0; font-size:12px; color:#fff; white-space:nowrap; }
   /* 実際にOCRへ渡している画像（確認用） */
-  #preview { position:absolute; left:6px; bottom:6px; max-width:60%; height:34px; border-radius:4px; background:#fff; opacity:.9; display:none; }
+  #preview { position:absolute; left:6px; bottom:6px; height:34px; width:auto; border-radius:4px; background:#fff; opacity:.9; display:none; }
 
   .controls { display:flex; gap:8px; align-items:center; margin:8px 0 4px; }
   .controls button { flex:0 0 auto; }
@@ -60,7 +60,7 @@
   <div class="viewer" id="viewer">
     <video id="video" playsinline muted autoplay></video>
     <div class="guide" id="guide"><span>コードをこの枠に入れてください</span></div>
-    <img id="preview" alt="">
+    <canvas id="preview"></canvas>
   </div>
 
   <div class="controls">
@@ -96,9 +96,10 @@
   const CODE_LEN   = 13;                                   // コードの文字数
   const CODE_RE    = new RegExp(`[A-Z0-9]{${CODE_LEN}}`);  // コードの形式
   const WHITELIST  = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  const SCAN_INTERVAL_MS = 250;   // OCRの間隔
+  const SCAN_INTERVAL_MS = 30;    // OCRの間隔（ほぼ連続）
   const CONFIRM_COUNT    = 2;     // 同じ結果が何回連続したら確定するか（誤読防止）
-  const TARGET_HEIGHT    = 260;   // OCRに渡す画像の高さ(px)。小さい文字を拡大するための基準
+  const TARGET_HEIGHT    = 200;   // OCRに渡す画像の高さ(px)。大きすぎると遅く、小さすぎると読めない
+  const MAX_WIDTH        = 1100;  // OCRに渡す画像の最大幅(px)
   const DEFAULT_ZOOM     = 1.4;   // カメラ起動時のズーム倍率
 
   // ===== 要素 =====
@@ -109,7 +110,7 @@
   const codeInput = $('codeInput'), resultEl = $('result');
   const codeText = $('codeText'), linkEl = $('link'), qrEl = $('qr'), copyBtn = $('copyBtn');
 
-  let stream = null, track = null, worker = null, scanning = false;
+  let stream = null, track = null, workers = null, workersPromise = null, scanning = false;
   let candidate = '', sameCount = 0, currentCode = '', hwZoom = false;
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
@@ -117,13 +118,25 @@
   const setStatus = msg => statusEl.textContent = msg;
 
   // ===== OCRワーカー準備 =====
-  async function getWorker() {
-    if (worker) return worker;
-    setStatus('文字認識エンジンを読み込み中…（初回は数秒かかります）');
-    worker = await Tesseract.createWorker('eng');
-    await worker.setParameters({ tessedit_char_whitelist: WHITELIST });
-    return worker;
+  // 読み方の違う2つのエンジンを並行で動かす（1行モード / 散らばった文字モード）
+  // ページを開いた時点で読み込みを始めておき、カメラ開始を待たせない
+  function loadWorkers() {
+    if (!workersPromise) {
+      const make = async psm => {
+        const w = await Tesseract.createWorker('eng');
+        await w.setParameters({ tessedit_char_whitelist: WHITELIST, tessedit_pageseg_mode: psm });
+        return w;
+      };
+      workersPromise = Promise.all([make('7'), make('11')]).then(ws => (workers = ws));
+    }
+    return workersPromise;
   }
+  async function getWorkers() {
+    if (workers) return workers;
+    setStatus('文字認識エンジンを読み込み中…（初回は数秒かかります）');
+    return loadWorkers();
+  }
+  loadWorkers().catch(e => console.error(e));
 
   // ===== カメラ =====
   async function startCamera() {
@@ -142,7 +155,7 @@
       video.srcObject = stream;
       await video.play();
       await setupCameraFeatures();
-      await getWorker();
+      await getWorkers();
       stopBtn.disabled = false;
       candidate = ''; sameCount = 0;
       scanning = true;
@@ -201,6 +214,7 @@
     video.style.transform = '';
     zoomBox.style.visibility = 'hidden';
     preview.style.display = 'none';
+    candidate = ''; sameCount = 0;
     startBtn.disabled = false;
     stopBtn.disabled = true;
     setStatus(currentCode ? `停止しました（最後のコード：${currentCode}）` : '停止しました');
@@ -223,8 +237,8 @@
     sx = Math.max(0, sx); sy = Math.max(0, sy);
     sw = Math.min(vw - sx, sw); sh = Math.min(vh - sy, sh);
 
-    // 小さい文字も読めるよう、一定の高さまで拡大（最大4倍）
-    const k = Math.min(4, Math.max(1, TARGET_HEIGHT / sh));
+    // 文字認識に適した大きさにそろえる（小さい映像は拡大、大きい映像は縮小して高速化）
+    const k = Math.min(4, TARGET_HEIGHT / sh, MAX_WIDTH / sw);
     canvas.width = Math.round(sw * k);
     canvas.height = Math.round(sh * k);
     ctx.imageSmoothingEnabled = true;
@@ -272,25 +286,35 @@
     return null;
   }
 
-  async function recognize(c, psm) {
-    await worker.setParameters({ tessedit_pageseg_mode: psm });
-    const { data } = await worker.recognize(c);
+  // 文字だけを出力させる（座標情報などの生成を省いて高速化）
+  const OUTPUT = { text: true, blocks: false, layoutBlocks: false, hocr: false, tsv: false };
+  async function recognize(w, c) {
+    const { data } = await w.recognize(c, {}, OUTPUT);
     return extractCode(data.text);
+  }
+
+  function updatePreview(c) {
+    preview.width = Math.round(c.width * 34 / c.height);
+    preview.height = 34;
+    preview.getContext('2d').drawImage(c, 0, 0, preview.width, preview.height);
+    preview.style.display = 'block';
   }
 
   async function scanLoop() {
     while (scanning) {
       const c = captureGuideArea();
       if (c) {
-        preview.src = c.toDataURL('image/png');
-        preview.style.display = 'block';
+        updatePreview(c);
         try {
-          // まず「1行」として認識、ダメなら「散らばった文字」として再認識
-          let code = await recognize(c, '7');
-          if (!code && scanning) code = await recognize(c, '11');
+          // 2つの読み方を同時に実行
+          const [a, b] = await Promise.all(workers.map(w => recognize(w, c)));
           if (!scanning) break;
+          const code = a || b;
           if (code) {
-            sameCount = (code === candidate) ? sameCount + 1 : 1;
+            // 2つの読み方が同じ結果 → その場で確定（待ち時間なし）
+            // 片方だけ読めた場合 → 次の結果と一致したら確定
+            if (a && b && a === b) sameCount = CONFIRM_COUNT;
+            else sameCount = (code === candidate) ? sameCount + 1 : 1;
             candidate = code;
             if (sameCount >= CONFIRM_COUNT && code !== currentCode) {
               // 新しいコードを確定 → その場でURL/QRを更新（画面は動かさない）
